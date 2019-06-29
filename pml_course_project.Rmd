@@ -1,0 +1,85 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Daniel Krasner"
+date: "6/26/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+We will explore a sports activity data set intending to predict response variable. A data set contains data related to 5 kinds of human physical activity. The goal of the research is to fit the most valid machine learning model on the train data and to predict the certain kind of human activity for each observation in the test data.
+
+## Preprocessing
+### Data loading and glancing
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(caret)
+if (!exists("training")) training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", stringsAsFactors=FALSE, na.strings = c("", "NA"))
+if (!exists("testing")) testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", stringsAsFactors=FALSE, na.strings = c("", "NA"))
+train_df <- training
+test_df <- testing
+dim(train_df)
+dim(test_df)
+head(names(train_df), 10)
+head(names(test_df), 10)
+setdiff(names(train_df), names(test_df))
+```
+After short examination of train and test datasets we find out that both data sets contain identical columns, except for **classe** column in the train dataset. Number of observations equals 19622 and 20 for train data and test data respectively. The most of the columns contain various signal parameters registered with sensors located on various human body parts during performing different types of activity. We personally do not have any background in the field of human physical activities measurments, but hopefully we can succeed to accomplish this research without that background. 
+
+We check all columns for missing values ratio and in both datasets drop those variables, whose missing values ratio exceeds 5% in at least one dataset.
+```{r}
+non_missing_variables <- sapply(list(train_df, test_df), function(dat) sapply(dat, function(column) !mean(is.na(column)) > .05)) %>% apply(1, function(elements) all(elements))
+sum(non_missing_variables)
+train_df <- train_df[non_missing_variables]
+test_df <- test_df[non_missing_variables]
+dim(train_df)
+dim(test_df)
+```
+
+We check classes of variables and convert unrelevant classes into relevant or drop them. We also drop redundant and confusing variable "X", which is observation index.
+
+```{r}
+table(sapply(train_df, class))
+```
+```{r}
+names(train_df[sapply(train_df, is.character)])
+convert_or_drop <- function(dat) mutate(dat, user_name = factor(user_name), cvtd_timestamp = NULL, new_window = factor(new_window), X = NULL)
+train_df <- convert_or_drop(train_df) %>% mutate(classe = factor(classe))
+test_df <- convert_or_drop(test_df)
+```
+
+## Model fitting
+For model building we use randon forest algorithm, because it is quite suitable for solving this kind of problems. We use **train** function from **caret** package with **rf** method. There are two main parameters in rf models to tuned: number of trees to grow (**ntree**) and number of variables to consider for desision making on each step (**mtry**). A value of **ntree** parameter can not be defined explicitly in **train** function, hence we use the default value for the function, which is 500. This default value is quite reasonable to obtain valid output with low variance. Parameter **mtry** can be tuned, and this tuning can be performed automatically by means of **train** function embedded methods. 
+First we use **trainControl** function to generate parameters that further control how model is created. We use **oob** method in order to get advantage of out-of-bag cross-validation which is available with random forest algorithm. We also use **grid** search option in order to iterate tuned parameter value from the options explicitly specified in **grid** vector. The common **mtry** value is square root of total predictor number which is **8** for our case, so we wll define a grid as sequence from 5 to 12 in order to capture the area of most probable best **mtry** value.
+The **train** function would tune the **mtry** parameter in order to identify a parameter value that yields the most accurate prediction. Hence we set **metric** value  to *Accuracy*.
+
+
+```{r cache=TRUE}
+set.seed(1876)
+tunegrid <- expand.grid(.mtry=c(5:12))
+control <- trainControl(method="oob", search = 'grid')
+
+rf_model <- train(classe ~., data=train_df, method="rf", metric="Accuracy", tuneGrid=tunegrid, trControl=control)
+
+print(rf_model)
+plot(rf_model, xlab = "MTRY")
+```
+
+The best prediction accuracy 99.94904% was obtained as out-of-bag cross-validation with mtry equal to 10. 
+
+## Results
+We predict **classe** on test data with fitted model. We expect 
+test error rate 0.05%
+
+```{r}
+prediction.rf <- predict(rf_model, newdata = test_df[1:58])
+paste(c(1:20), prediction.rf, sep = ':', collapse = ', ')
+```
+
+Obtained prediction was submitted to *Course Project Prediction Quiz* and yielded 100% accurate result. 
